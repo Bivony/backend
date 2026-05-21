@@ -20,16 +20,18 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+
 # =========================================================
 # DATABASE
 # =========================================================
 def database():
 
     return pymysql.connect(
-        host=os.getenv("mysql-bivonys.alwaysdata.net"),
-        user=os.getenv("bivonys"),
-        password=os.getenv("modcom2026"),
-        database=os.getenv("bivonys_edunexus"),
+        host="mysql-bivonys.alwaysdata.net",
+        user="bivonys",
+        password="modcom2026",
+        database="bivonys_edunexus",
+        port=3306,
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True
     )
