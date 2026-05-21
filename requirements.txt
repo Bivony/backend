@@ -1,0 +1,7 @@
+Flask
+flask-cors
+pymysql
+bcrypt
+requests
+gunicorn
+Werkzeug
