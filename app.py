@@ -26,13 +26,14 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 def database():
 
     return pymysql.connect(
-        host=os.getenv("DB_HOST"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME"),
+        host=os.getenv("mysql-bivonys.alwaysdata.net"),
+        user=os.getenv("bivonys"),
+        password=os.getenv("modcom2026"),
+        database=os.getenv("bivonys_edunexus"),
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True
     )
+
 
 # =========================================================
 # HELPERS
