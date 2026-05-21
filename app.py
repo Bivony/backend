@@ -5,6 +5,9 @@ import bcrypt
 import os
 import datetime
 
+# =========================================================
+# APP
+# =========================================================
 app = Flask(__name__)
 CORS(app)
 
@@ -21,11 +24,12 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # DATABASE
 # =========================================================
 def database():
+
     return pymysql.connect(
-        host="mysql-bivonys.alwaysdata.net",
-        user="bivonys",
-        password="modcom2026",
-        database="bivonys_edunexus",
+        host=os.getenv("DB_HOST"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME"),
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True
     )
@@ -34,17 +38,28 @@ def database():
 # HELPERS
 # =========================================================
 def success(data=None, message="success"):
+
     return jsonify({
         "status": "success",
         "message": message,
         "data": data
     })
 
+
 def error(message="error"):
+
     return jsonify({
         "status": "error",
         "message": message
     })
+
+# =========================================================
+# HOME
+# =========================================================
+@app.route("/")
+def home():
+
+    return "EduNexus Backend Running"
 
 # =========================================================
 # STATIC FILES
@@ -289,66 +304,49 @@ def delete_user(id):
     except Exception as e:
         return error(str(e))
 
+# =========================================================
+# CLASSES
+# =========================================================
+@app.route("/api/classes", methods=["POST"])
+def create_class():
 
-<?php
+    try:
 
-// CREATE CLASS
-if ($method === "POST") {
+        data = request.json
 
-    $data =
-      json_decode(
-        file_get_contents("php://input"),
-        true
-      );
+        class_name = data.get("class_name")
+        teacher_id = data.get("teacher_id")
 
-    $class_name =
-      $data["class_name"] ?? "";
+        if not class_name:
+            return error("Class name required")
 
-    $teacher_id =
-      $data["teacher_id"] ?? null;
+        con = database()
+        cur = con.cursor()
 
-    if (!$class_name) {
+        cur.execute("""
+            INSERT INTO classes
+            (
+                class_name,
+                teacher_id
+            )
+            VALUES(%s,%s)
+        """, (
+            class_name,
+            teacher_id
+        ))
 
-        echo json_encode([
-            "message" =>
-            "Class name required"
-        ]);
+        con.commit()
 
-        exit;
-    }
+        cur.close()
+        con.close()
 
-    $stmt =
-      $conn->prepare(
-        "INSERT INTO classes
-        (class_name, teacher_id)
-        VALUES (?, ?)"
-      );
+        return success(
+            message="Class created"
+        )
 
-    $stmt->bind_param(
-      "si",
-      $class_name,
-      $teacher_id
-    );
+    except Exception as e:
+        return error(str(e))
 
-    if ($stmt->execute()) {
-
-        echo json_encode([
-            "success" => true,
-            "message" =>
-            "Class created"
-        ]);
-
-    } else {
-
-        echo json_encode([
-            "success" => false,
-            "message" =>
-            "Failed to create class"
-        ]);
-    }
-
-    exit;
-}
 # =========================================================
 # SUBJECTS
 # =========================================================
@@ -486,6 +484,7 @@ def assignments():
     except Exception as e:
         return error(str(e))
 
+
 @app.route("/api/assignments", methods=["POST"])
 def add_assignment():
 
@@ -525,6 +524,9 @@ def add_assignment():
     except Exception as e:
         return error(str(e))
 
+# =========================================================
+# DELETE ASSIGNMENT
+# =========================================================
 @app.route("/api/assignments/<int:id>", methods=["DELETE"])
 def delete_assignment(id):
 
@@ -557,7 +559,9 @@ def delete_assignment(id):
 # =========================================================
 @app.route("/api/materials", methods=["GET"])
 def materials():
+
     return get_all("materials")
+
 
 @app.route("/api/materials", methods=["POST"])
 def add_material():
@@ -613,9 +617,9 @@ def add_material():
     except Exception as e:
         return error(str(e))
 
-
-#attendance
-
+# =========================================================
+# ATTENDANCE
+# =========================================================
 @app.route("/api/attendance", methods=["GET"])
 def get_attendance():
 
@@ -642,8 +646,8 @@ def get_attendance():
         return success(data)
 
     except Exception as e:
-
         return error(str(e))
+
 
 @app.route("/api/attendance", methods=["POST"])
 def mark_attendance():
@@ -652,66 +656,48 @@ def mark_attendance():
 
         data = request.json
 
-        print("ATTENDANCE DATA:", data)
-
         student_id = data.get("student_id")
         subject_id = data.get("subject_id")
         status = data.get("status")
 
         if not student_id:
-            return jsonify({
-                "status": "error",
-                "message": "student_id missing"
-            }), 400
+            return error("student_id missing")
 
         if not subject_id:
-            return jsonify({
-                "status": "error",
-                "message": "subject_id missing"
-            }), 400
+            return error("subject_id missing")
 
         if not status:
-            return jsonify({
-                "status": "error",
-                "message": "status missing"
-            }), 400
+            return error("status missing")
 
-        connection = database()
+        con = database()
+        cur = con.cursor()
 
-        cursor = connection.cursor()
-
-        cursor.execute("""
+        cur.execute("""
             INSERT INTO attendance
             (
                 student_id,
                 subject_id,
                 status
             )
-            VALUES (%s, %s, %s)
+            VALUES(%s,%s,%s)
         """, (
             student_id,
             subject_id,
             status
         ))
 
-        connection.commit()
+        con.commit()
 
-        cursor.close()
-        connection.close()
+        cur.close()
+        con.close()
 
-        return jsonify({
-            "status": "success",
-            "message": "Attendance saved"
-        })
+        return success(
+            message="Attendance saved"
+        )
 
     except Exception as e:
+        return error(str(e))
 
-        print("ATTENDANCE ERROR:", str(e))
-
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
 # =========================================================
 # NOTIFICATIONS
 # =========================================================
@@ -739,11 +725,9 @@ def notifications():
     except Exception as e:
         return error(str(e))
 
-
 # =========================================================
 # GRADES
 # =========================================================
-
 @app.route('/api/grades', methods=['GET'])
 def get_grades():
 
@@ -753,10 +737,9 @@ def get_grades():
         cur = con.cursor()
 
         cur.execute("""
-            SELECT
-                grades.*
+            SELECT *
             FROM grades
-            ORDER BY grades.id DESC
+            ORDER BY id DESC
         """)
 
         data = cur.fetchall()
@@ -799,7 +782,7 @@ def save_grade():
                 marks,
                 feedback
             )
-            VALUES (%s, %s, %s, %s)
+            VALUES(%s,%s,%s,%s)
         """, (
             student_id,
             assignment_id,
@@ -807,12 +790,13 @@ def save_grade():
             feedback
         ))
 
+        con.commit()
+
         cur.close()
         con.close()
 
         return success(
-            None,
-            "Grade saved successfully"
+            message="Grade saved successfully"
         )
 
     except Exception as e:
@@ -829,23 +813,24 @@ def delete_grade(id):
 
         cur.execute("""
             DELETE FROM grades
-            WHERE id = %s
+            WHERE id=%s
         """, (id,))
+
+        con.commit()
 
         cur.close()
         con.close()
 
         return success(
-            None,
-            "Grade deleted successfully"
+            message="Grade deleted successfully"
         )
 
     except Exception as e:
         return error(str(e))
+
 # =========================================================
 # STUDENT ATTENDANCE PERCENTAGE
 # =========================================================
-
 @app.route('/api/student-attendance/<int:student_id>', methods=['GET'])
 def student_attendance(student_id):
 
@@ -854,22 +839,20 @@ def student_attendance(student_id):
         con = database()
         cur = con.cursor()
 
-        # Total attendance records
         cur.execute("""
             SELECT COUNT(*) AS total
             FROM attendance
-            WHERE student_id = %s
+            WHERE student_id=%s
         """, (student_id,))
 
         total_data = cur.fetchone()
         total = total_data['total']
 
-        # Present records
         cur.execute("""
             SELECT COUNT(*) AS present_total
             FROM attendance
-            WHERE student_id = %s
-            AND status = 'Present'
+            WHERE student_id=%s
+            AND status='Present'
         """, (student_id,))
 
         present_data = cur.fetchone()
@@ -902,6 +885,3 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=5000
     )
-@app.route("/")
-def home():
-    return "EduNexus Backend Running"
