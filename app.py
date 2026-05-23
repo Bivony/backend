@@ -106,7 +106,7 @@ def signup():
         email = d.get("email")
         password = d.get("password")
         phone = d.get("phone")
-        role = d.get("role")
+        role = d.get("role") or "student"
 
         if not name or not email or not password:
             return error("Missing fields")
@@ -205,7 +205,8 @@ def signin():
             return error("Wrong password")
 
         user.pop("password", None)
-
+        user["role"] = user.get("role") or "student"
+        
         return success(
             user,
             "Login successful"
