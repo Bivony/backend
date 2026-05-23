@@ -107,26 +107,25 @@ def signup():
         password = d.get("password")
         phone = d.get("phone")
         role = d.get("role") or "student"
+        institution_id = d.get("institution_id")
 
-        if not name or not email or not password:
-            return error("Missing fields")
+        if not name or not email or not password or not institution_id:
+            return error("Missing required fields including institution_id")
 
         con = database()
         cur = con.cursor()
 
         cur.execute(
-            "SELECT * FROM users WHERE email=%s",
-            (email,)
+            "SELECT * FROM users WHERE email=%s AND institution_id=%s",
+            (email, institution_id)
         )
 
         existing = cur.fetchone()
 
         if existing:
-
             cur.close()
             con.close()
-
-            return error("Email already exists")
+            return error("Email already exists in this institution")
 
         hashed = bcrypt.hashpw(
             password.encode(),
@@ -139,25 +138,24 @@ def signup():
                 email,
                 phone,
                 password,
-                role
+                role,
+                institution_id
             )
-            VALUES(%s,%s,%s,%s,%s)
+            VALUES(%s,%s,%s,%s,%s,%s)
         """, (
             name,
             email,
             phone,
             hashed,
-            role
+            role,
+            institution_id
         ))
 
         con.commit()
-
         cur.close()
         con.close()
 
-        return success(
-            message="Account created"
-        )
+        return success(message="Account created")
 
     except Exception as e:
         return error(str(e))
@@ -174,13 +172,17 @@ def signin():
 
         email = d.get("email")
         password = d.get("password")
+        institution_id = d.get("institution_id")
+
+        if not email or not password or not institution_id:
+            return error("Missing email, password or institution_id")
 
         con = database()
         cur = con.cursor()
 
         cur.execute(
-            "SELECT * FROM users WHERE email=%s",
-            (email,)
+            "SELECT * FROM users WHERE email=%s AND institution_id=%s",
+            (email, institution_id)
         )
 
         user = cur.fetchone()
@@ -189,7 +191,7 @@ def signin():
         con.close()
 
         if not user:
-            return error("Invalid email")
+            return error("Invalid credentials or wrong institution")
 
         stored_password = user["password"]
 
@@ -206,22 +208,23 @@ def signin():
 
         user.pop("password", None)
         user["role"] = user.get("role") or "student"
-        
-        return success(
-            user,
-            "Login successful"
-        )
+
+        return success(user, "Login successful")
 
     except Exception as e:
         return error(str(e))
-
 # =========================================================
-# USERS
+# USERS (INSTITUTION ISOLATED)
 # =========================================================
 @app.route("/api/users", methods=["GET"])
 def users():
 
     try:
+
+        institution_id = request.args.get("institution_id")
+
+        if not institution_id:
+            return error("institution_id is required")
 
         con = database()
         cur = con.cursor()
@@ -229,8 +232,9 @@ def users():
         cur.execute("""
             SELECT *
             FROM users
+            WHERE institution_id=%s
             ORDER BY id DESC
-        """)
+        """, (institution_id,))
 
         data = cur.fetchall()
 
@@ -241,7 +245,6 @@ def users():
 
     except Exception as e:
         return error(str(e))
-
 # =========================================================
 # UPDATE USER ROLE
 # =========================================================
@@ -251,33 +254,45 @@ def update_user_role(id):
     try:
 
         d = request.json
-
         role = d.get("role")
+        institution_id = d.get("institution_id")
+
+        if not role or not institution_id:
+            return error("Missing role or institution_id")
 
         con = database()
         cur = con.cursor()
 
+        # =====================================================
+        # SECURITY FIX: enforce institution isolation
+        # =====================================================
         cur.execute("""
             UPDATE users
             SET role=%s
-            WHERE id=%s
+            WHERE id=%s AND institution_id=%s
         """, (
             role,
-            id
+            id,
+            institution_id
         ))
 
         con.commit()
+
+        # check if update happened
+        if cur.rowcount == 0:
+            cur.close()
+            con.close()
+            return error("User not found in this institution")
 
         cur.close()
         con.close()
 
         return success(
-            message="Role updated"
+            message="Role updated successfully"
         )
 
     except Exception as e:
         return error(str(e))
-
 # =========================================================
 # DELETE USER
 # =========================================================
@@ -875,6 +890,364 @@ def student_attendance(student_id):
             "present": present,
             "percentage": percentage
         })
+
+    except Exception as e:
+        return error(str(e))
+
+# =========================================================
+# PRODUCTS - CREATE
+# =========================================================
+@app.route("/api/products", methods=["POST"])
+def create_product():
+
+    try:
+        name = request.form.get("name")
+        description = request.form.get("description")
+        price = request.form.get("price")
+        institution_id = request.form.get("institution_id")
+
+        image = request.files.get("image")
+
+        if not all([name, price, institution_id]):
+            return error("Missing fields")
+
+        filename = None
+
+        if image:
+            filename = secure_filename(image.filename)
+            image.save(os.path.join("uploads", filename))
+
+        con = database()
+        cur = con.cursor()
+
+        cur.execute("""
+            INSERT INTO products (
+                name,
+                description,
+                price,
+                image,
+                institution_id
+            )
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            name,
+            description,
+            price,
+            filename,
+            institution_id
+        ))
+
+        con.commit()
+        cur.close()
+        con.close()
+
+        return success(message="Product created")
+
+    except Exception as e:
+        return error(str(e))
+# get product
+@app.route("/api/products", methods=["GET"])
+def get_products():
+
+    try:
+
+        institution_id = request.args.get("institution_id")
+
+        con = database()
+        cur = con.cursor()
+
+        if institution_id:
+            cur.execute("""
+                SELECT * FROM products
+                WHERE institution_id=%s
+                ORDER BY id DESC
+            """, (institution_id,))
+        else:
+            cur.execute("""
+                SELECT * FROM products
+                ORDER BY id DESC
+            """)
+
+        data = cur.fetchall()
+
+        cur.close()
+        con.close()
+
+        return success(data)
+
+    except Exception as e:
+        return error(str(e))
+
+# delete product 
+@app.route("/api/products/<int:id>", methods=["DELETE"])
+def delete_product(id):
+
+    try:
+
+        con = database()
+        cur = con.cursor()
+
+        cur.execute("DELETE FROM products WHERE id=%s", (id,))
+
+        con.commit()
+
+        cur.close()
+        con.close()
+
+        return success(message="Deleted")
+
+    except Exception as e:
+        return error(str(e))
+
+# order
+@app.route("/api/orders", methods=["POST"])
+def create_order():
+
+    try:
+
+        d = request.json
+
+        product_id = d.get("product_id")
+        buyer_id = d.get("buyer_id")
+        quantity = int(d.get("quantity", 1))
+
+        con = database()
+        cur = con.cursor()
+
+        # GET PRODUCT PRICE + INSTITUTION
+        cur.execute(
+            "SELECT * FROM products WHERE id=%s",
+            (product_id,)
+        )
+
+        product = cur.fetchone()
+
+        if not product:
+            return error("Product not found")
+
+        total = float(product["price"]) * quantity
+
+        cur.execute("""
+            INSERT INTO orders (
+                product_id,
+                buyer_id,
+                quantity,
+                total_price,
+                order_status,
+                institution_id
+            )
+            VALUES (%s,%s,%s,%s,%s,%s)
+        """, (
+            product_id,
+            buyer_id,
+            quantity,
+            total,
+            "Pending",
+            product["institution_id"]
+        ))
+
+        con.commit()
+
+        cur.close()
+        con.close()
+
+        return success({
+            "total": total
+        }, "Order created")
+
+    except Exception as e:
+        return error(str(e))
+
+# order filter
+@app.route("/api/orders", methods=["GET"])
+def get_orders():
+
+    try:
+
+        institution_id = request.args.get("institution_id")
+
+        con = database()
+        cur = con.cursor()
+
+        if institution_id:
+            cur.execute("""
+                SELECT * FROM orders
+                WHERE institution_id=%s
+                ORDER BY id DESC
+            """, (institution_id,))
+        else:
+            cur.execute("""
+                SELECT * FROM orders
+                ORDER BY id DESC
+            """)
+
+        data = cur.fetchall()
+
+        cur.close()
+        con.close()
+
+        return success(data)
+
+    except Exception as e:
+        return error(str(e))
+
+# update order status
+@app.route("/api/orders/<int:id>", methods=["PUT"])
+def update_order(id):
+
+    try:
+
+        d = request.json
+        status = d.get("order_status")
+
+        con = database()
+        cur = con.cursor()
+
+        cur.execute("""
+            UPDATE orders
+            SET order_status=%s
+            WHERE id=%s
+        """, (status, id))
+
+        con.commit()
+
+        cur.close()
+        con.close()
+
+        return success(message="Updated")
+
+    except Exception as e:
+        return error(str(e))
+
+# =========================================================
+# SAFARICOM SANDBOX CONFIG
+# =========================================================
+
+MPESA_CONSUMER_KEY = "your_sandbox_consumer_key"
+MPESA_CONSUMER_SECRET = "your_sandbox_consumer_secret"
+MPESA_SHORTCODE = "174379"
+MPESA_PASSKEY = "your_sandbox_passkey"
+MPESA_CALLBACK_URL = "https://edunexus-wjxx.onrender.com/api/mpesa/callback"
+
+
+# =========================================================
+# GET MPESA TOKEN
+# =========================================================
+def get_mpesa_token():
+
+    url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+
+    res = requests.get(
+        url,
+        auth=(MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET)
+    )
+
+    return res.json().get("access_token")
+
+
+# =========================================================
+# STK PUSH (MARKETPLACE PAYMENT)
+# =========================================================
+@app.route("/api/mpesa/stkpush", methods=["POST"])
+def mpesa_stkpush():
+
+    try:
+
+        data = request.json
+
+        phone = data.get("phone")      # 254XXXXXXXXX
+        amount = data.get("amount")
+        order_id = data.get("order_id")
+
+        token = get_mpesa_token()
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+        password = base64.b64encode(
+            (MPESA_SHORTCODE + MPESA_PASSKEY + timestamp).encode()
+        ).decode()
+
+        url = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
+
+        payload = {
+            "BusinessShortCode": MPESA_SHORTCODE,
+            "Password": password,
+            "Timestamp": timestamp,
+            "TransactionType": "CustomerPayBillOnline",
+            "Amount": int(amount),
+            "PartyA": phone,
+            "PartyB": MPESA_SHORTCODE,
+            "PhoneNumber": phone,
+            "CallBackURL": MPESA_CALLBACK_URL,
+            "AccountReference": f"ORDER-{order_id}",
+            "TransactionDesc": "EduNexus Marketplace Payment"
+        }
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        res = requests.post(url, json=payload, headers=headers)
+
+        return success(res.json())
+
+    except Exception as e:
+        return error(str(e))
+
+
+# =========================================================
+# MPESA CALLBACK (PAYMENT CONFIRMATION)
+# =========================================================
+@app.route("/api/mpesa/callback", methods=["POST"])
+def mpesa_callback():
+
+    try:
+
+        data = request.json
+        result = data["Body"]["stkCallback"]
+
+        order_id = result.get("AccountReference", "").replace("ORDER-", "")
+
+        if result["ResultCode"] == 0:
+
+            metadata = result["CallbackMetadata"]["Item"]
+
+            receipt = None
+            phone = None
+            amount = None
+
+            for item in metadata:
+
+                if item["Name"] == "MpesaReceiptNumber":
+                    receipt = item["Value"]
+
+                if item["Name"] == "PhoneNumber":
+                    phone = item["Value"]
+
+                if item["Name"] == "Amount":
+                    amount = item["Value"]
+
+            # UPDATE ORDER
+            con = database()
+            cur = con.cursor()
+
+            cur.execute("""
+                UPDATE orders
+                SET payment_status=%s,
+                    mpesa_receipt=%s
+                WHERE id=%s
+            """, (
+                "PAID",
+                receipt,
+                order_id
+            ))
+
+            con.commit()
+            cur.close()
+            con.close()
+
+        return success("Callback received")
 
     except Exception as e:
         return error(str(e))
